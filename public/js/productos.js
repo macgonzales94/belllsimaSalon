@@ -1,5 +1,7 @@
 // productos.js
 // Verificar si el usuario está logueado
+const API_BASE_URL = '/api'
+
 function isLoggedIn() {
     return localStorage.getItem('token') !== null;
 }
@@ -7,7 +9,7 @@ function isLoggedIn() {
 // Cargar productos
 async function cargarProductos() {
     try {
-        const response = await fetch('http://localhost:3000/api/productos');
+        const response = await fetch('${API_BASE_URL}/api/productos');
         if (!response.ok) throw new Error('Error en la respuesta del servidor');
         
         const data = await response.json();
@@ -79,7 +81,7 @@ async function agregarAlCarrito(productoId) {
 
     try {
         // Obtener detalles del producto
-        const response = await fetch(`http://localhost:3000/api/productos/${productoId}`);
+        const response = await fetch(`${API_BASE_URL}/api/productos/${productoId}`);
         const producto = await response.json();
 
         if (!isLoggedIn()) {
@@ -162,7 +164,7 @@ async function sincronizarCarritoConServidor() {
         if (!token) return;
 
         // Enviar productos al servidor
-        const response = await fetch('http://localhost:3000/api/carrito/sincronizar', {
+        const response = await fetch('${API_BASE_URL}/api/carrito/sincronizar', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -227,7 +229,7 @@ function inicializarModal() {
         const password = document.getElementById('loginPassword').value;
 
         try {
-            const response = await fetch('http://localhost:3000/api/usuarios/login', {
+            const response = await fetch('${API_BASE_URL}/api/usuarios/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -266,7 +268,7 @@ if (registroForm) {
         };
 
         try {
-            const response = await fetch('http://localhost:3000/api/usuarios/registro', {
+            const response = await fetch('${API_BASE_URL}/api/usuarios/registro', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -302,7 +304,7 @@ async function procederAlPago() {
 
     try {
         // 1. Crear el pedido desde el carrito
-        const response = await fetch('http://localhost:3000/api/pedidos/crear-desde-carrito', {
+        const response = await fetch('${API_BASE_URL}/api/pedidos/crear-desde-carrito', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
