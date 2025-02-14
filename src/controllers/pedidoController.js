@@ -10,11 +10,15 @@ const pedidoController = {
     // Agregar este nuevo método
     crearDesdeCarrito: async (req, res) => {
         try {
+
+            console.log('Usuario:', req.usuario); 
+
             if (!req.usuario || !req.usuario._id) {
                 return res.status(401).json({ mensaje: 'Usuario no autenticado' });
             }
 
             const usuarioId = req.usuario._id;
+            console.log('ID de usuario:', usuarioId);
 
             // Verificar si ya hay un pedido en estado "pendiente" para este usuario
             const pedidoExistente = await Pedido.findOne({ usuario: usuarioId, estado: 'pendiente' });
@@ -25,6 +29,7 @@ const pedidoController = {
             // Obtener el carrito del usuario
             const carrito = await Carrito.findOne({ usuario: usuarioId, estado: 'activo' })
                 .populate('productos.producto');
+                console.log('Carrito encontrado:', carrito);  
 
             if (!carrito || carrito.productos.length === 0) {
                 return res.status(400).json({ mensaje: 'Carrito vacío' });
@@ -49,6 +54,7 @@ const pedidoController = {
                 estado: 'pendiente',
                 pago: { estado: 'pendiente', metodoPago: 'culqi' }
             });
+            console.log('Pedido creado:', pedido);
 
             pedido.calcularTotales(); // Calcular total del pedido
             await pedido.save(); // Guardar pedido en la base de datos

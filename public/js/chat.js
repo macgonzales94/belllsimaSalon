@@ -1,4 +1,8 @@
 // chat.js
+
+
+const API_BASE_URL = '/api';
+
 class ChatWidget {
     constructor() {
         this.socket = null;
@@ -59,7 +63,7 @@ class ChatWidget {
         const token = localStorage.getItem('token');
 
         // Inicializar Socket.IO con o sin token
-        this.socket = io('http://localhost:3000', {
+        this.socket = io('${API_BASE_URL}', {
             auth: {
                 token: token || null
             }

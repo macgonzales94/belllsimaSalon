@@ -1,5 +1,6 @@
 const Usuario = require('../models/Usuario');
 const jwt = require('jsonwebtoken');
+const emailService = require('../utils/emailService');
 
 const usuarioController = {
     // Registro de usuario
@@ -27,6 +28,17 @@ const usuarioController = {
             // Guardar usuario
             await nuevoUsuario.save();
 
+            // Enviar email de bienvenida
+            try {
+                await emailService.enviarBienvenida({
+                    email: nuevoUsuario.email,
+                    nombre: nuevoUsuario.nombre
+                });
+            } catch (emailError) {
+                console.error('Error al enviar email de bienvenida:', emailError);
+                // No interrumpimos el flujo si falla el envío del email
+            }
+
             // Generar token
             const token = jwt.sign(
                 { id: nuevoUsuario._id, rol: nuevoUsuario.rol },
@@ -52,7 +64,6 @@ const usuarioController = {
             });
         }
     },
-
     // Login de usuario
     login: async (req, res) => {
         try {

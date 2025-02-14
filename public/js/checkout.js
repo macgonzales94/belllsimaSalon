@@ -1,7 +1,24 @@
 // checkout.js
 const API_BASE_URL = '/api';
 
+
+// Rutas centralizadas
+const routes = {
+    carrito: `${API_BASE_URL}/carrito`,
+    pedidos: {
+        crearDesdeCarrito: `${API_BASE_URL}/pedidos/crear-desde-carrito`,
+        obtener: (id) => `${API_BASE_URL}/pedidos/${id}`
+    },
+    pagos: {
+        config: `${API_BASE_URL}/pagos/config`,
+        generarToken: `${API_BASE_URL}/pagos/generar-token`,
+        procesar: `${API_BASE_URL}/pagos/procesar`
+    }
+};
+
+
 let pedidoActual = null;
+let carrito = null;
 
 // Validar el token de autenticación
 function checkAuth() {
@@ -16,13 +33,10 @@ function checkAuth() {
 // Función para cargar el carrito
 async function cargarCarrito() {
     try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            window.location.href = 'login.html';
-            return;
-        }
+        const token = checkAuth();
+        if (!token) return;
 
-        const response = await fetch('${API_BASE_URL}/carrito', {
+        const response = await fetch(routes.carrito, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -66,7 +80,7 @@ async function inicializarCheckout() {
     if (!token) return;
 
     try {
-        const response = await fetch('${API_BASE_URL}/pedidos/crear-desde-carrito', {
+        const response = await fetch(routes.pedidos.crearDesdeCarrito, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -82,7 +96,6 @@ async function inicializarCheckout() {
         const { pedido } = await response.json();
         pedidoActual = pedido;
 
-        // Mostrar código de pedido en la interfaz
         document.getElementById('codigoPedido').textContent = `Código de Pedido: ${pedido.codigoPedido}`;
         mostrarResumenCompra(pedido);
 
@@ -158,7 +171,7 @@ function obtenerDireccion() {
 // Función para obtener la configuración de Culqi
 async function obtenerConfigCulqi() {
     try {
-        const response = await fetch('${API_BASE_URL}/pagos/config', {
+        const response = await fetch(routes.pagos.config, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
@@ -172,15 +185,15 @@ async function obtenerConfigCulqi() {
 }
 
 // Función para generar el token de Culqi
-async function generarTokenCulqi(datosTargeta) {
+async function generarTokenCulqi(datosTarjeta) {
     try {
-        const response = await fetch('${API_BASE_URL}/pagos/generar-token', {
+        const response = await fetch(routes.pagos.generarToken, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             },
-            body: JSON.stringify(datosTargeta)
+            body: JSON.stringify(datosTarjeta)
         });
 
         if (!response.ok) {
@@ -197,23 +210,14 @@ async function generarTokenCulqi(datosTargeta) {
 }
 
 // Función para procesar el pago
-async function procesarPago() {
+async function procesarPago(token) {
     if (!pedidoActual) {
-        mostrarError('No se encontró información del pedido');
-        return;
+        throw new Error('No se encontró información del pedido');
     }
 
-    const btnPagar = document.getElementById('btnPagar');
-    btnPagar.disabled = true;
-    btnPagar.textContent = 'Procesando...';
-
     try {
-        const datosTarjeta = validarFormulario();
         const direccion = obtenerDireccion();
-        const token = await generarTokenCulqi(datosTarjeta);
-
-        // Enviar pago con el código de pedido
-        const response = await fetch('${API_BASE_URL}/pagos/procesar', {
+        const response = await fetch(routes.pagos.procesar, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -222,7 +226,7 @@ async function procesarPago() {
             body: JSON.stringify({
                 token,
                 pedidoId: pedidoActual._id,
-                codigoPedido: pedidoActual.codigoPedido, // Enviar el código
+                codigoPedido: pedidoActual.codigoPedido,
                 direccionEnvio: direccion
             })
         });
@@ -232,17 +236,12 @@ async function procesarPago() {
             throw new Error(error.mensaje || 'Error al procesar el pago');
         }
 
-        window.location.href = 'confirmacion.html';
-
+        return await response.json();
     } catch (error) {
         console.error('Error:', error);
-        mostrarError(error.message);
-    } finally {
-        btnPagar.disabled = false;
-        btnPagar.textContent = 'Realizar Pago';
+        throw error;
     }
 }
-
 
 // Cargar detalles del pedido
 async function cargarPedido() {
@@ -250,7 +249,7 @@ async function cargarPedido() {
         const pedidoId = obtenerPedidoId();
         if (!pedidoId) return;
 
-        const response = await fetch(`${API_BASE_URL}/pedidos/${pedidoId}`, {
+        const response = await fetch(routes.pedidos.obtener(pedidoId), {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
@@ -267,6 +266,7 @@ async function cargarPedido() {
         mostrarError('Error al cargar el pedido');
     }
 }
+
 
 // Función principal para manejar el pago
 async function manejarPago() {

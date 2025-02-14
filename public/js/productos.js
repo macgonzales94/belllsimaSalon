@@ -1,6 +1,14 @@
-// productos.js
-// Verificar si el usuario está logueado
 const API_BASE_URL = '/api'
+
+// Rutas centralizadas
+const routes = {
+    productos: `${API_BASE_URL}/productos`,
+    productoById: (id) => `${API_BASE_URL}/productos/${id}`,
+    login: `${API_BASE_URL}/usuarios/login`,
+    registro: `${API_BASE_URL}/usuarios/registro`,
+    sincronizarCarrito: `${API_BASE_URL}/carrito/sincronizar`,
+    crearPedido: `${API_BASE_URL}/pedidos/crear-desde-carrito`
+  };
 
 function isLoggedIn() {
     return localStorage.getItem('token') !== null;
@@ -9,7 +17,7 @@ function isLoggedIn() {
 // Cargar productos
 async function cargarProductos() {
     try {
-        const response = await fetch('${API_BASE_URL}/api/productos');
+        const response = await fetch(routes.productos);
         if (!response.ok) throw new Error('Error en la respuesta del servidor');
         
         const data = await response.json();
@@ -30,20 +38,6 @@ function verificarCarritoTemporal() {
     if (!isLoggedIn() && localStorage.getItem('carritoTemp')) {
         mostrarMensajeBienvenida();
     }
-}
-
-// Mostrar mensaje de bienvenida
-function mostrarMensajeBienvenida() {
-    const mensajeHTML = `
-        <div class="mensaje-bienvenida">
-            <p>¡Bienvenido de nuevo! Tienes productos en tu carrito. ¿Quieres recuperarlos?</p>
-            <div class="mensaje-botones">
-                <button onclick="recuperarCarrito()" class="btn-primary">Sí, recuperar</button>
-                <button onclick="ignorarCarrito()" class="btn-secondary">No, ignorar</button>
-            </div>
-        </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', mensajeHTML);
 }
 
 function actualizarResumenCompra() {
@@ -73,22 +67,17 @@ async function agregarAlCarrito(productoId) {
     }
 
     const carritoTemp = JSON.parse(localStorage.getItem('carritoTemp') || '[]');
-    // Verificar límite de productos
     if (carritoTemp.length >= 20) {
         mostrarMensaje('No puedes agregar más productos al carrito');
         return;
     }
 
     try {
-        // Obtener detalles del producto
-        const response = await fetch(`${API_BASE_URL}/api/productos/${productoId}`);
+        const response = await fetch(routes.productoById(productoId));
         const producto = await response.json();
 
         if (!isLoggedIn()) {
-            // Guardar en localStorage
-            const carritoTemp = JSON.parse(localStorage.getItem('carritoTemp') || '[]');
             const productoExistente = carritoTemp.find(item => item.producto._id === productoId);
-
             if (productoExistente) {
                 productoExistente.cantidad += 1;
             } else {
@@ -98,10 +87,8 @@ async function agregarAlCarrito(productoId) {
                     precioUnitario: producto.precio
                 });
             }
-
             localStorage.setItem('carritoTemp', JSON.stringify(carritoTemp));
         } else {
-            // Enviar al servidor
             await agregarProductoServidor(productoId);
         }
 
@@ -113,7 +100,6 @@ async function agregarAlCarrito(productoId) {
         mostrarMensaje('Error al agregar producto');
     }
 }
-
 // Mostrar productos
 function mostrarProductos(productos) {
     const container = document.getElementById('productosContainer');
@@ -163,8 +149,7 @@ async function sincronizarCarritoConServidor() {
         const token = localStorage.getItem('token');
         if (!token) return;
 
-        // Enviar productos al servidor
-        const response = await fetch('${API_BASE_URL}/api/carrito/sincronizar', {
+        const response = await fetch(routes.sincronizarCarrito, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -182,10 +167,7 @@ async function sincronizarCarritoConServidor() {
             throw new Error('Error al sincronizar el carrito');
         }
 
-        // Limpiar carrito temporal
         localStorage.removeItem('carritoTemp');
-        
-        // Actualizar la UI
         actualizarContadorCarrito();
         actualizarResumenCompra();
 
@@ -229,7 +211,7 @@ function inicializarModal() {
         const password = document.getElementById('loginPassword').value;
 
         try {
-            const response = await fetch('${API_BASE_URL}/api/usuarios/login', {
+            const response = await fetch(routes.login, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -241,10 +223,7 @@ function inicializarModal() {
             if (response.ok) {
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('usuario', JSON.stringify(data.usuario));
-                
-                // Sincronizar carrito después del login
                 await sincronizarCarritoConServidor();
-                
                 window.location.href = 'checkout.html';
             } else {
                 mostrarMensaje(data.mensaje || 'Error al iniciar sesión');
@@ -256,7 +235,6 @@ function inicializarModal() {
     });
 }
 
-// Registro form handler
 if (registroForm) {
     registroForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -268,7 +246,7 @@ if (registroForm) {
         };
 
         try {
-            const response = await fetch('${API_BASE_URL}/api/usuarios/registro', {
+            const response = await fetch(routes.registro, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -280,10 +258,7 @@ if (registroForm) {
             if (response.ok) {
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('usuario', JSON.stringify(data.usuario));
-                
-                // Sincronizar carrito después del registro
                 await sincronizarCarritoConServidor();
-                
                 window.location.href = 'checkout.html';
             } else {
                 mostrarMensaje(data.mensaje || 'Error al registrar usuario');
@@ -303,8 +278,8 @@ async function procederAlPago() {
     }
 
     try {
-        // 1. Crear el pedido desde el carrito
-        const response = await fetch('${API_BASE_URL}/api/pedidos/crear-desde-carrito', {
+        // Crear el pedido desde el carrito
+        const response = await fetch(routes.crearPedido, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -318,31 +293,28 @@ async function procederAlPago() {
         }
 
         const { pedido } = await response.json();
+        
+        // Si el pedido se creó exitosamente
+        if (pedido) {
+            // Limpiar el carrito temporal si existe
+            localStorage.removeItem('carritoTemp');
+            
+            // Actualizar contadores visuales
+            actualizarContadorCarrito();
+            actualizarResumenCompra();
 
-        // 2. Redirigir al checkout con el ID del pedido
-        window.location.href = `checkout.html?pedidoId=${pedido._id}`;
+            // Mostrar mensaje de éxito con el código de pedido
+            mostrarMensaje(`Pedido creado exitosamente. Tu número de pedido es: ${pedido.codigoPedido}`);
+
+            // Redirigir a la página de checkout con el ID del pedido
+            window.location.href = `checkout.html?pedidoId=${pedido._id}`;
+        }
 
     } catch (error) {
         console.error('Error:', error);
         mostrarMensajeError('Error al procesar el pedido: ' + error.message);
     }
 }
-
-// Procesar pago
-document.addEventListener('DOMContentLoaded', () => {
-    const btnProcederPago = document.getElementById('btnProcederPago');
-    if (btnProcederPago) {
-        btnProcederPago.addEventListener('click', () => {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                mostrarModalAuth();
-            } else {
-                window.location.href = 'checkout.html';
-            }
-        });
-    }
-});
-
 
 // Event listeners para el modal
 document.addEventListener('click', (e) => {
@@ -354,13 +326,12 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Inicializar
 document.addEventListener('DOMContentLoaded', () => {
     cargarProductos();
     actualizarContadorCarrito();
     actualizarResumenCompra();
     inicializarModal();
-    // Botón de proceder al pago
+    
     const btnProcederPago = document.getElementById('btnProcederPago');
     if (btnProcederPago) {
         btnProcederPago.addEventListener('click', procederAlPago);
