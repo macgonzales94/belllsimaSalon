@@ -1,25 +1,16 @@
-// routes/pedidos.js
 const express = require('express');
 const router = express.Router();
 const pedidoController = require('../controllers/pedidoController');
 const { verificarToken } = require('../middlewares/autenticacion');
 
-// Todas las rutas requieren autenticación
+// Aplicar verificación de token a todas las rutas
 router.use(verificarToken);
 
-//
+// Rutas
 router.post('/crear-desde-carrito', pedidoController.crearDesdeCarrito);
-
-// Crear nuevo pedido
-router.post('/', pedidoController.crear);
-
-// Obtener pedidos del usuario
-router.get('/', pedidoController.listarPedidosUsuario);
-
-// Obtener un pedido específico
+router.get('/usuario', pedidoController.listarPedidosUsuario);
 router.get('/:id', pedidoController.obtenerPedido);
-
-// Cancelar pedido
-router.put('/:id/cancelar', pedidoController.cancelarPedido);
+router.put('/:id', pedidoController.actualizarPedido);
+router.delete('/:id', pedidoController.cancelarPedido);
 
 module.exports = router;

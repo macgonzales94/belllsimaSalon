@@ -1,154 +1,139 @@
 // controllers/pedidoController.js
+const mongoose = require('mongoose');
 const Pedido = require('../models/Pedido');
 const Carrito = require('../models/Carrito');
+const Usuario = require('../models/Usuario');
 const Producto = require('../models/Producto');
 const emailService = require('../utils/emailService');
 const jwt = require('jsonwebtoken');
+
+
+ // Función auxiliar para obtener dirección predeterminada
 
 const pedidoController = {
 
     // Agregar este nuevo método
     crearDesdeCarrito: async (req, res) => {
+        // Iniciar sesión de transacción
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
         try {
-
-            console.log('Usuario:', req.usuario); 
-
-            if (!req.usuario || !req.usuario._id) {
+            if (!req.usuario?._id) {
                 return res.status(401).json({ mensaje: 'Usuario no autenticado' });
             }
 
             const usuarioId = req.usuario._id;
-            console.log('ID de usuario:', usuarioId);
 
-            // Verificar si ya hay un pedido en estado "pendiente" para este usuario
-            const pedidoExistente = await Pedido.findOne({ usuario: usuarioId, estado: 'pendiente' });
+            // Verificar pedido pendiente y carrito en una sola operación
+            const [pedidoExistente, carrito] = await Promise.all([
+                Pedido.findOne(
+                    { usuario: usuarioId, estado: 'pendiente' }
+                ).session(session),
+                Carrito.findOne(
+                    { usuario: usuarioId, estado: 'activo' }
+                ).populate('productos.producto').session(session)
+            ]);
+
             if (pedidoExistente) {
+                await session.abortTransaction();
                 return res.status(400).json({ mensaje: 'Ya tienes un pedido en proceso' });
             }
 
-            // Obtener el carrito del usuario
-            const carrito = await Carrito.findOne({ usuario: usuarioId, estado: 'activo' })
-                .populate('productos.producto');
-                console.log('Carrito encontrado:', carrito);  
-
-            if (!carrito || carrito.productos.length === 0) {
+            if (!carrito?.productos?.length) {
+                await session.abortTransaction();
                 return res.status(400).json({ mensaje: 'Carrito vacío' });
             }
 
-            // Verificar stock
-            for (let item of carrito.productos) {
-                const producto = await Producto.findById(item.producto._id);
+            // Preparar actualizaciones de stock
+            const productosActualizados = [];
+            const productosParaPedido = [];
+
+            for (const item of carrito.productos) {
+                const producto = item.producto;
+                
                 if (!producto || producto.stock < item.cantidad) {
-                    return res.status(400).json({ mensaje: `Stock insuficiente para ${item.producto.nombre}` });
-                }
-            }
-
-            // Crear un único pedido con código generado automáticamente
-            const pedido = new Pedido({
-                usuario: usuarioId,
-                productos: carrito.productos.map(item => ({
-                    producto: item.producto._id,
-                    cantidad: item.cantidad,
-                    precioUnitario: item.producto.precio
-                })),
-                estado: 'pendiente',
-                pago: { estado: 'pendiente', metodoPago: 'culqi' }
-            });
-            console.log('Pedido creado:', pedido);
-
-            pedido.calcularTotales(); // Calcular total del pedido
-            await pedido.save(); // Guardar pedido en la base de datos
-
-            // Marcar el carrito como procesado
-            carrito.estado = 'procesado';
-            await carrito.save();
-
-            res.json({
-                mensaje: 'Pedido creado exitosamente',
-                pedido: {
-                    _id: pedido._id,
-                    codigoPedido: pedido.codigoPedido, // Enviar código de pedido
-                    productos: pedido.productos,
-                    subtotal: pedido.subtotal,
-                    total: pedido.total
-                }
-            });
-
-        } catch (error) {
-            console.error('Error al crear pedido desde carrito:', error);
-            res.status(500).json({ mensaje: 'Error al crear pedido', error: error.message });
-        }
-    },
-
-    // controllers/pedidoController.js
-    crear: async (req, res) => {
-        try {
-            // Obtener carrito activo del usuario
-            const carrito = await Carrito.findOne({
-                usuario: req.usuario._id,
-                estado: 'activo'
-            }).populate('productos.producto');
-
-            if (!carrito || carrito.productos.length === 0) {
-                return res.status(400).json({
-                    mensaje: 'Carrito vacío'
-                });
-            }
-
-            // Verificar stock disponible
-            for (let item of carrito.productos) {
-                const producto = await Producto.findById(item.producto);
-                if (producto.stock < item.cantidad) {
-                    return res.status(400).json({
-                        mensaje: `Stock insuficiente para ${producto.nombre}`
+                    await session.abortTransaction();
+                    return res.status(400).json({ 
+                        mensaje: `Stock insuficiente para ${producto?.nombre || 'producto desconocido'}` 
                     });
                 }
+
+                productosActualizados.push({
+                    updateOne: {
+                        filter: { _id: producto._id },
+                        update: { $inc: { stock: -item.cantidad } }
+                    }
+                });
+
+                productosParaPedido.push({
+                    producto: producto._id,
+                    cantidad: item.cantidad,
+                    precioUnitario: producto.precio,
+                    nombre: producto.nombre,  // Guardar para referencia histórica
+                    sku: producto.sku        // Guardar para referencia histórica
+                });
             }
 
             // Crear el pedido
             const pedido = new Pedido({
-                usuario: req.usuario._id,
-                productos: carrito.productos,
-                direccionEnvio: req.body.direccionEnvio,
-                pago: req.body.pago
+                usuario: usuarioId,
+                productos: productosParaPedido,
+                estado: 'pendiente',
+                pago: { 
+                    estado: 'pendiente', 
+                    metodoPago: req.body.metodoPago || 'culqi',
+                    intentos: 0
+                },
+                metadata: {
+                    userAgent: req.headers['user-agent'],
+                    ip: req.ip,
+                    origen: req.body.origen || 'web'
+                }
             });
 
-            // Calcular totales
             pedido.calcularTotales();
 
-            // Actualizar stock de productos
-            for (let item of pedido.productos) {
-                await Producto.findByIdAndUpdate(item.producto, {
-                    $inc: { stock: -item.cantidad }
-                });
-            }
+            // Ejecutar todas las operaciones en la transacción
+            await Promise.all([
+                Producto.bulkWrite(productosActualizados, { session }),
+                pedido.save({ session }),
+                Carrito.findByIdAndUpdate(
+                    carrito._id,
+                    { 
+                        estado: 'procesado',
+                        procesadoEn: new Date(),
+                        pedidoAsociado: pedido._id
+                    },
+                    { session }
+                )
+            ]);
 
-            // Marcar carrito como procesado
-            carrito.estado = 'procesando';
-            await carrito.save();
-
-            // Guardar pedido
-            await pedido.save();
-
-            // Enviar email de confirmación
-            try {
-                const usuarioData = await Usuario.findById(req.usuario._id);
-                await emailService.enviarConfirmacionPedido(pedido, usuarioData);
-            } catch (emailError) {
-                console.error('Error al enviar email de confirmación:', emailError);
-                // No detenemos el proceso si falla el envío del email
-            }
+            // Confirmar la transacción
+            await session.commitTransaction();
 
             res.status(201).json({
                 mensaje: 'Pedido creado exitosamente',
-                pedido
+                pedido: {
+                    _id: pedido._id,
+                    codigoPedido: pedido.codigoPedido,
+                    productos: pedido.productos,
+                    subtotal: pedido.subtotal,
+                    total: pedido.total,
+                    estado: pedido.estado,
+                    createdAt: pedido.createdAt
+                }
             });
+
         } catch (error) {
+            await session.abortTransaction();
             console.error('Error al crear pedido:', error);
-            res.status(500).json({
-                mensaje: 'Error al crear pedido',
-                error: error.message
+            res.status(500).json({ 
+                mensaje: 'Error al crear pedido', 
+                error: error.message 
             });
+        } finally {
+            session.endSession();
         }
     },
 
@@ -338,6 +323,8 @@ const pedidoController = {
             });
         }
     }
+   
 };
+
 
 module.exports = pedidoController;

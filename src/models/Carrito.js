@@ -39,7 +39,7 @@ const carritoSchema = new mongoose.Schema({
     // Estado del carrito
     estado: {
         type: String,
-        enum: ['activo', 'procesando', 'completado'],
+        enum: ['activo', 'procesando', 'procesado', 'completado'],
         default: 'activo'
     }
 }, {

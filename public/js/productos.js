@@ -278,6 +278,16 @@ async function procederAlPago() {
     }
 
     try {
+        const btnProcederPago = document.getElementById('btnProcederPago');
+        btnProcederPago.disabled = true;
+        btnProcederPago.textContent = 'Procesando...';
+
+        // Verificar que haya productos en el carrito
+        const carritoTemp = JSON.parse(localStorage.getItem('carritoTemp') || '[]');
+        if (!carritoTemp.length) {
+            throw new Error('El carrito está vacío');
+        }
+
         // Crear el pedido desde el carrito
         const response = await fetch(routes.crearPedido, {
             method: 'POST',
@@ -294,25 +304,24 @@ async function procederAlPago() {
 
         const { pedido } = await response.json();
         
-        // Si el pedido se creó exitosamente
-        if (pedido) {
-            // Limpiar el carrito temporal si existe
-            localStorage.removeItem('carritoTemp');
-            
-            // Actualizar contadores visuales
-            actualizarContadorCarrito();
-            actualizarResumenCompra();
-
-            // Mostrar mensaje de éxito con el código de pedido
-            mostrarMensaje(`Pedido creado exitosamente. Tu número de pedido es: ${pedido.codigoPedido}`);
-
-            // Redirigir a la página de checkout con el ID del pedido
-            window.location.href = `checkout.html?pedidoId=${pedido._id}`;
-        }
+        // Limpiar el carrito temporal
+        localStorage.removeItem('carritoTemp');
+        
+        // Guardar el ID del pedido en localStorage para recuperarlo en checkout
+        localStorage.setItem('pedidoActual', pedido._id);
+        
+        // Redirigir a checkout
+        window.location.href = `checkout.html?pedidoId=${pedido._id}`;
 
     } catch (error) {
         console.error('Error:', error);
-        mostrarMensajeError('Error al procesar el pedido: ' + error.message);
+        mostrarMensaje(error.message || 'Error al procesar el pedido');
+    } finally {
+        const btnProcederPago = document.getElementById('btnProcederPago');
+        if (btnProcederPago) {
+            btnProcederPago.disabled = false;
+            btnProcederPago.textContent = 'Proceder al Pago';
+        }
     }
 }
 
