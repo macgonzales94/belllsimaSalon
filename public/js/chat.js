@@ -1,6 +1,4 @@
 // chat.js
-
-
 const API_BASE_URL = '/api';
 
 class ChatWidget {
@@ -34,12 +32,12 @@ class ChatWidget {
     initEvents() {
         // Event listeners para abrir/cerrar el chat
         this.chatIcon.addEventListener('click', () => {
-            console.log('Chat icon clicked'); // Debug
+            console.log('Chat icon clicked');
             this.toggleChat();
         });
         
         this.closeChatBtn.addEventListener('click', () => {
-            console.log('Close button clicked'); // Debug
+            console.log('Close button clicked');
             this.toggleChat();
         });
 
@@ -59,23 +57,49 @@ class ChatWidget {
     }
 
     initSocket() {
-        // Obtener token si existe
-        const token = localStorage.getItem('token');
-
-        // Inicializar Socket.IO con o sin token
-        this.socket = io('${API_BASE_URL}', {
+        this.socket = io({
+            path: '/api/socket.io',
+            transports: ['polling', 'websocket'], // Primero intentar polling, luego websocket
+            upgrade: true, // Permitir actualización a WebSocket
+            rememberUpgrade: true,
+            timeout: 10000, // Aumentar el timeout
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
             auth: {
                 token: token || null
             }
         });
 
-        // Eventos del socket
+            // Mejorar el manejo de eventos de conexión
         this.socket.on('connect', () => {
             console.log('Conectado al chat');
+            this.addSystemMessage('Conectado al chat');
         });
 
+        this.socket.on('connect_error', (error) => {
+            console.error('Error de conexión:', error);
+            this.addSystemMessage('Error de conexión - reintentando...');
+        });
+
+        this.socket.on('reconnect', (attemptNumber) => {
+            console.log('Reconectado después de', attemptNumber, 'intentos');
+            this.addSystemMessage('Reconectado al chat');
+        });
+
+        this.socket.on('reconnect_error', (error) => {
+            console.error('Error de reconexión:', error);
+            this.addSystemMessage('Error al reconectar - reintentando...');
+        });
+
+        this.socket.on('disconnect', (reason) => {
+            console.log('Desconectado:', reason);
+            this.addSystemMessage('Desconectado del chat');
+        });
+
+
         this.socket.on('mensaje_sistema', (data) => {
-            // Actualizar el título del chat
             const chatHeader = document.querySelector('.chat-header h3');
             if (chatHeader) {
                 if (data.isAuthenticated && data.userName) {
@@ -84,14 +108,11 @@ class ChatWidget {
                     chatHeader.textContent = 'Chat con Bellisima';
                 }
             }
-
-            // Agregar el mensaje de bienvenida
             this.addSystemMessage(data.mensaje);
         });
 
         this.socket.on('nuevoMensaje', (data) => {
             this.addMessage(data.contenido, data.usuario, data.isAuthenticated);
-            
             if (!this.isOpen) {
                 this.unreadCount++;
                 this.updateNotificationBadge();
@@ -106,10 +127,15 @@ class ChatWidget {
             console.error('Error en el chat:', error);
             this.addSystemMessage('Error de conexión');
         });
+
+        this.socket.on('disconnect', () => {
+            console.log('Desconectado del chat');
+            this.addSystemMessage('Desconectado del chat');
+        });
     }
 
     toggleChat() {
-        console.log('Toggling chat, current state:', this.isOpen); // Debug
+        console.log('Toggling chat, current state:', this.isOpen);
         this.isOpen = !this.isOpen;
         this.chatWindow.classList.toggle('active');
         

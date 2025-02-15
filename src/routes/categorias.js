@@ -4,7 +4,7 @@ const router = express.Router();
 const categoriaController = require('../controllers/categoriaController');
 const { verificarToken, esAdmin } = require('../middlewares/autenticacion');
 
-// Rutas públicas
+
 router.get('/', categoriaController.listar);
 router.get('/:id', categoriaController.obtenerPorId);
 
