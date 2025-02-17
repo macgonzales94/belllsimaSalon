@@ -78,55 +78,89 @@ const pagoController = {
     // Método para procesar el pago con el token generado
     procesarPago: async (req, res) => {
         try {
-            // Obtener el token y el ID del pedido del request
-            const { token, pedidoId } = req.body;
+            // Obtener datos necesarios del request
+            const { token, pedidoId, cargoData } = req.body;
 
-            // Buscar el pedido en la base de datos y poblarlo con la información del usuario
+            if (!token || !pedidoId) {
+                return res.status(400).json({
+                    mensaje: 'Token y pedidoId son requeridos'
+                });
+            }
+
+            // Buscar el pedido en la base de datos
             const pedido = await Pedido.findById(pedidoId)
-                .populate('usuario', 'email');
+                .populate('usuario', 'email nombre apellido');
 
-            // Verificar si existe el pedido
             if (!pedido) {
                 return res.status(404).json({
                     mensaje: 'Pedido no encontrado'
                 });
             }
 
-            // Crear el cargo en Culqi usando el token
-            const cargo = await culqi.charges.create({
-                // Convertir el monto a centavos (requerido por Culqi)
-                amount: Math.round(pedido.total * 100),
-                // Moneda en Soles Peruanos
-                currency_code: 'PEN',
-                // Email del cliente
-                email: pedido.usuario.email,
-                // Token generado previamente
-                source_id: token,
-                // Descripción del cargo
-                description: `Pedido #${pedido._id}`,
-            });
+            // Validar que el pedido no haya sido pagado
+            if (pedido.pago && pedido.pago.estado === 'completado') {
+                return res.status(400).json({
+                    mensaje: 'Este pedido ya ha sido pagado'
+                });
+            }
 
-            // Actualizar el estado del pedido
+            // Crear el objeto de cargo para Culqi
+            const datosCargo = {
+                amount: Math.round(pedido.total * 100),
+                currency_code: 'PEN',
+                email: pedido.usuario.email,
+                source_id: token,
+                description: `Pedido #${pedido._id}`,
+                antifraud_details: {
+                    first_name: pedido.usuario.nombre,
+                    last_name: pedido.usuario.apellido,
+                    address: pedido.direccionEnvio.calle,
+                    address_city: pedido.direccionEnvio.ciudad,
+                    country_code: 'PE',
+                    phone: pedido.direccionEnvio.telefono
+                }
+            };
+
+            // Procesar el cargo en Culqi
+            console.log('Procesando cargo en Culqi:', datosCargo);
+            const cargo = await culqi.charges.create(datosCargo);
+            console.log('Respuesta de Culqi:', cargo);
+
+            // Actualizar el pedido con la información del pago
             pedido.pago = {
                 estado: 'completado',
                 metodoPago: 'tarjeta',
                 referencia: cargo.id,
-                fecha: new Date()
+                fecha: new Date(),
+                detallesCargo: {
+                    monto: cargo.amount / 100,
+                    moneda: cargo.currency_code,
+                    ultimosDigitos: cargo.source.last_four,
+                    marca: cargo.source.brand
+                }
             };
-            // Guardar los cambios en el pedido
-            await pedido.save();
 
-            // Devolver respuesta exitosa
+            await pedido.save();
+            console.log('Pedido actualizado:', pedido._id);
+
+            // Enviar respuesta exitosa
             res.json({
                 mensaje: 'Pago procesado exitosamente',
-                cargo: cargo.id,
-                pedido: pedido._id
+                cargo: {
+                    id: cargo.id,
+                    monto: cargo.amount / 100,
+                    moneda: cargo.currency_code
+                },
+                pedido: {
+                    id: pedido._id,
+                    estado: pedido.pago.estado
+                }
             });
 
         } catch (error) {
-            console.error('Error en el pago:', error);
-            
-            // Manejo específico de errores de tarjeta
+            console.error('Error en procesamiento de pago:', error);
+
+            // Manejar errores específicos de Culqi
             if (error.type === 'card_error') {
                 return res.status(400).json({
                     mensaje: 'Error con la tarjeta',
@@ -134,10 +168,17 @@ const pagoController = {
                 });
             }
 
-            // Manejo de otros errores
+            if (error.type === 'invalid_request_error') {
+                return res.status(400).json({
+                    mensaje: 'Error en la solicitud',
+                    error: error.user_message
+                });
+            }
+
+            // Error general
             res.status(500).json({
                 mensaje: 'Error al procesar el pago',
-                error: error.message
+                error: error.message || 'Error interno del servidor'
             });
         }
     },

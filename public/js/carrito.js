@@ -159,10 +159,13 @@ async function manejarLogin(e) {
         });
 
         const data = await response.json();
+       
         if (response.ok) {
             localStorage.setItem('token', data.token);
             localStorage.setItem('usuario', JSON.stringify(data.usuario));
+            
             await transferirCarritoYProceder();
+
         } else {
             mostrarMensaje(data.mensaje || 'Error al iniciar sesión');
         }
@@ -209,13 +212,31 @@ async function transferirCarritoYProceder() {
     try {
         const carritoTemp = JSON.parse(localStorage.getItem('carritoTemp') || '[]');
         if (carritoTemp.length > 0) {
-            const response = await fetch(routes.carrito, {
-                method: 'POST',
+            // Primero verificar si ya existe un carrito activo
+            const verificarCarrito = await fetch(routes.carrito, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+
+            const carritoExistente = await verificarCarrito.json();
+
+            // Si existe un carrito, actualizar. Si no, crear nuevo
+            const method = carritoExistente._id ? 'PUT' : 'POST';
+            const url = carritoExistente._id ?
+                `${routes.carrito}/${carritoExistente._id}` :
+                routes.carrito;
+
+            const response = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${localStorage.getItem('token')}`
                 },
-                body: JSON.stringify({ productos: carritoTemp })
+                body: JSON.stringify({
+                    productos: carritoTemp,
+                    actualizar: true // Flag para el backend
+                })
             });
 
             if (!response.ok) {
@@ -224,7 +245,18 @@ async function transferirCarritoYProceder() {
 
             localStorage.removeItem('carritoTemp');
         }
-        window.location.href = 'checkout.html';
+
+        // Obtener el ID del carrito actual antes de redirigir
+        const carritoActual = await fetch(routes.carrito, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+
+        const { _id: carritoId } = await carritoActual.json();
+
+        // Redirigir con el ID del carrito
+        window.location.href = `checkout.html?carritoId=${carritoId}`;
     } catch (error) {
         console.error('Error:', error);
         mostrarMensaje('Error al procesar el carrito');
@@ -243,7 +275,7 @@ function mostrarMensaje(mensaje) {
 // Inicializar
 document.addEventListener('DOMContentLoaded', () => {
     cargarCarrito();
-    
+
     const btnProcederPago = document.getElementById('btnProcederPago');
     btnProcederPago?.addEventListener('click', () => {
         if (!isLoggedIn()) {

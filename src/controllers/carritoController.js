@@ -175,11 +175,11 @@ const carritoController = {
         }
     },
 
-     // Transferir carrito temporal a usuario autenticado
-     transferirCarritoTemp: async (req, res) => {
+    // Transferir carrito temporal a usuario autenticado
+    transferirCarritoTemp: async (req, res) => {
         try {
             const { productos } = req.body;
-            
+
             // Buscar o crear carrito del usuario
             let carrito = await Carrito.findOne({
                 usuario: req.usuario._id,
@@ -225,37 +225,14 @@ const carritoController = {
     sincronizar: async (req, res) => {
         try {
             const { productos } = req.body;
-            const usuarioId = req.usuario._id;
-
-            // Buscar o crear el carrito del usuario
-            let carrito = await Carrito.findOne({ usuario: usuarioId });
             
-            if (!carrito) {
-                carrito = new Carrito({
-                    usuario: usuarioId,
-                    productos: []
-                });
-            }
-
-            // Validar y agregar cada producto
+            const productosValidados = [];
+            
+            // Validar productos antes de la actualización
             for (const item of productos) {
-                // Verificar si el producto existe
                 const producto = await Producto.findById(item.producto);
-                if (!producto) {
-                    continue; // Saltar productos que no existen
-                }
-
-                // Verificar si el producto ya está en el carrito
-                const productoExistente = carrito.productos.find(
-                    p => p.producto.toString() === item.producto
-                );
-
-                if (productoExistente) {
-                    // Actualizar cantidad
-                    productoExistente.cantidad += item.cantidad;
-                } else {
-                    // Agregar nuevo producto
-                    carrito.productos.push({
+                if (producto) {
+                    productosValidados.push({
                         producto: item.producto,
                         cantidad: item.cantidad,
                         precioUnitario: producto.precio
@@ -263,19 +240,56 @@ const carritoController = {
                 }
             }
 
-            // Recalcular el total
-            carrito.total = carrito.productos.reduce((total, item) => {
-                return total + (item.precioUnitario * item.cantidad);
+            // Calcular el total
+            const total = productosValidados.reduce((sum, item) => {
+                return sum + (item.precioUnitario * item.cantidad);
             }, 0);
 
-            // Guardar cambios
-            await carrito.save();
+            try {
+                // Intentar actualizar o crear el carrito
+                const carrito = await Carrito.findOneAndUpdate(
+                    {
+                        usuario: req.usuario._id,
+                        estado: 'activo'
+                    },
+                    {
+                        $set: {
+                            productos: productosValidados,
+                            total: total
+                        }
+                    },
+                    {
+                        new: true,
+                        upsert: true,
+                        runValidators: true
+                    }
+                );
 
-            res.json({
-                mensaje: 'Carrito sincronizado exitosamente',
-                carrito
-            });
+                res.json({
+                    mensaje: 'Carrito sincronizado exitosamente',
+                    carrito
+                });
+            } catch (error) {
+                if (error.code === 11000) {
+                    // Si hay un error de duplicación, intentar una actualización simple
+                    const carritoExistente = await Carrito.findOneAndUpdate(
+                        { usuario: req.usuario._id, estado: 'activo' },
+                        {
+                            $set: {
+                                productos: productosValidados,
+                                total: total
+                            }
+                        },
+                        { new: true }
+                    );
 
+                    return res.json({
+                        mensaje: 'Carrito sincronizado exitosamente',
+                        carrito: carritoExistente
+                    });
+                }
+                throw error;
+            }
         } catch (error) {
             console.error('Error al sincronizar carrito:', error);
             res.status(500).json({
@@ -284,6 +298,7 @@ const carritoController = {
             });
         }
     }
+  
 };
 
 module.exports = carritoController;

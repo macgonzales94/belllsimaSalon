@@ -47,6 +47,6 @@ async function iniciarServidor() {
         process.exit(1);
     }
 }
-
+console.log(iniciarServidor)
 // Iniciar el servidor
 iniciarServidor();

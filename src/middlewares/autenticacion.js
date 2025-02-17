@@ -7,32 +7,31 @@ const Usuario = require('../models/Usuario');
 // Middleware para verificar el token JWT
 const verificarToken = async (req, res, next) => {
     try {
-        // Obtener el token del header
         const token = req.header('Authorization')?.replace('Bearer ', '');
+        console.log('Token recibido:', token ? 'Token presente' : 'No hay token');
 
-        // Verificar si existe el token
         if (!token) {
             return res.status(401).json({
                 mensaje: 'Acceso denegado. Token no proporcionado'
             });
         }
 
-        // Verificar y decodificar el token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // Buscar el usuario por ID
+        console.log('ID decodificado:', decoded.id);
+
         const usuario = await Usuario.findById(decoded.id).select('-password');
-        
+        console.log('Usuario encontrado:', usuario ? usuario._id : 'No encontrado');
+
         if (!usuario) {
             return res.status(401).json({
                 mensaje: 'Token no válido - usuario no existe'
             });
         }
 
-        // Agregar el usuario a la request
         req.usuario = usuario;
         next();
     } catch (error) {
+        console.error('Error en verificación de token:', error);
         res.status(401).json({
             mensaje: 'Token no válido',
             error: error.message

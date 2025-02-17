@@ -4,7 +4,6 @@ const mongoose = require('mongoose');
 const pedidoSchema = new mongoose.Schema({
     codigoPedido: {
         type: String,
-        unique: true
     },
     usuario: {
         type: mongoose.Schema.Types.ObjectId,

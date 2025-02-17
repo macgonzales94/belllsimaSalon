@@ -53,4 +53,9 @@ carritoSchema.methods.calcularTotal = function() {
     }, 0);
 };
 
+carritoSchema.index({ usuario: 1, estado: 1 }, { 
+    unique: true, 
+    partialFilterExpression: { estado: 'activo' } 
+});
+
 module.exports = mongoose.model('Carrito', carritoSchema);

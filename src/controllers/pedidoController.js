@@ -8,22 +8,25 @@ const emailService = require('../utils/emailService');
 const jwt = require('jsonwebtoken');
 
 
- // Función auxiliar para obtener dirección predeterminada
+// Función auxiliar para obtener dirección predeterminada
 
 const pedidoController = {
 
     // Agregar este nuevo método
     crearDesdeCarrito: async (req, res) => {
-        // Iniciar sesión de transacción
-        const session = await mongoose.startSession();
-        session.startTransaction();
-
+        let session;
         try {
+            // Iniciar sesión
+            session = await mongoose.startSession();
+            await session.startTransaction();
+
             if (!req.usuario?._id) {
+                await session.abortTransaction();
                 return res.status(401).json({ mensaje: 'Usuario no autenticado' });
             }
 
             const usuarioId = req.usuario._id;
+            console.log('ID de usuario:', usuarioId);
 
             // Verificar pedido pendiente y carrito en una sola operación
             const [pedidoExistente, carrito] = await Promise.all([
@@ -34,6 +37,10 @@ const pedidoController = {
                     { usuario: usuarioId, estado: 'activo' }
                 ).populate('productos.producto').session(session)
             ]);
+
+            console.log('Carrito encontrado:', carrito?._id);
+            console.log('Pedido existente:', pedidoExistente?._id);
+
 
             if (pedidoExistente) {
                 await session.abortTransaction();
@@ -51,11 +58,11 @@ const pedidoController = {
 
             for (const item of carrito.productos) {
                 const producto = item.producto;
-                
+
                 if (!producto || producto.stock < item.cantidad) {
                     await session.abortTransaction();
-                    return res.status(400).json({ 
-                        mensaje: `Stock insuficiente para ${producto?.nombre || 'producto desconocido'}` 
+                    return res.status(400).json({
+                        mensaje: `Stock insuficiente para ${producto?.nombre || 'producto desconocido'}`
                     });
                 }
 
@@ -80,8 +87,8 @@ const pedidoController = {
                 usuario: usuarioId,
                 productos: productosParaPedido,
                 estado: 'pendiente',
-                pago: { 
-                    estado: 'pendiente', 
+                pago: {
+                    estado: 'pendiente',
                     metodoPago: req.body.metodoPago || 'culqi',
                     intentos: 0
                 },
@@ -100,7 +107,7 @@ const pedidoController = {
                 pedido.save({ session }),
                 Carrito.findByIdAndUpdate(
                     carrito._id,
-                    { 
+                    {
                         estado: 'procesado',
                         procesadoEn: new Date(),
                         pedidoAsociado: pedido._id
@@ -109,8 +116,9 @@ const pedidoController = {
                 )
             ]);
 
-            // Confirmar la transacción
+            // Confirmar transacción
             await session.commitTransaction();
+            console.log('Transacción completada exitosamente');
 
             res.status(201).json({
                 mensaje: 'Pedido creado exitosamente',
@@ -124,16 +132,19 @@ const pedidoController = {
                     createdAt: pedido.createdAt
                 }
             });
-
         } catch (error) {
-            await session.abortTransaction();
-            console.error('Error al crear pedido:', error);
+            console.error('Error detallado:', error);
+            if (session) {
+                await session.abortTransaction().catch(console.error);
+            }
             res.status(500).json({ 
                 mensaje: 'Error al crear pedido', 
                 error: error.message 
             });
         } finally {
-            session.endSession();
+            if (session) {
+                await session.endSession().catch(console.error);
+            }
         }
     },
 
@@ -323,7 +334,7 @@ const pedidoController = {
             });
         }
     }
-   
+
 };
 
 
